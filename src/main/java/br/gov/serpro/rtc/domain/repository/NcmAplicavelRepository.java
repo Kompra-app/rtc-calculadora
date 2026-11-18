@@ -100,15 +100,22 @@ public interface NcmAplicavelRepository extends JpaRepository<NcmAplicavel, Long
      * do anexo é prefixo do NCM informado), na data. É o predicado A da
      * tabela-verdade de NcmAplicavelService; as exceções são aplicadas lá,
      * pelas mesmas consultas que o cálculo usa. Cada linha traz o id e o
-     * código da classificação.
+     * código da classificação. Só CBS e IBS (tributo 2, o mesmo conjunto
+     * da consulta cbs-ibs/class-trib): o Imposto Seletivo usa os mesmos códigos
+     * com outro significado.
      */
     @NativeQuery(value = """
         SELECT DISTINCT ct.CLTR_ID, ct.CLTR_CD
           FROM NCM_APLICAVEL n
           JOIN CLASSIFICACAO_TRIBUTARIA ct ON ct.CLTR_ID = n.NCMA_CLTR_ID
+          JOIN SITUACAO_TRIBUTARIA st ON st.SITR_ID = ct.CLTR_SITR_ID
+          JOIN TRIBUTO_SITUACAO_TRIBUTARIA tst ON tst.TRST_SITR_ID = st.SITR_ID
          WHERE n.NCMA_NCM_CD = SUBSTR(:ncm, 1, LENGTH(n.NCMA_NCM_CD))
            AND :data BETWEEN n.NCMA_INICIO_VIGENCIA AND COALESCE(n.NCMA_FIM_VIGENCIA, :data)
            AND :data BETWEEN ct.CLTR_INICIO_VIGENCIA AND COALESCE(ct.CLTR_FIM_VIGENCIA, :data)
+           AND tst.TRST_TBTO_ID = 2
+           AND :data BETWEEN st.SITR_INICIO_VIGENCIA AND COALESCE(st.SITR_FIM_VIGENCIA, :data)
+           AND :data BETWEEN tst.TRST_INICIO_VIGENCIA AND COALESCE(tst.TRST_FIM_VIGENCIA, :data)
          ORDER BY ct.CLTR_CD
     """)
     List<Object[]> listarClassificacoesCobrindoNcm(

@@ -1531,7 +1531,7 @@ public interface DadosAbertosControllerOpenApi {
         LocalDate data);
 
     @Operation(
-        summary = "Classificações Tributárias vinculadas por NCM",
+        summary = "Classificações Tributárias de CBS e IBS vinculadas por NCM",
         description = "Obtém os códigos cClassTrib cujo anexo vincula o NCM em uma determinada data, aplicando as exceções pela mesma regra do cálculo. Não inclui as classificações sem anexo, que aceitam qualquer NCM."
     )
     @ApiResponses(value = {
@@ -1557,7 +1557,7 @@ public interface DadosAbertosControllerOpenApi {
         LocalDate data);
 
     @Operation(
-        summary = "Classificações Tributárias vinculadas por NBS",
+        summary = "Classificações Tributárias de CBS e IBS vinculadas por NBS",
         description = "Obtém os códigos cClassTrib cujo anexo vincula a NBS em uma determinada data, casando o vínculo por prefixo e aplicando as exceções pela mesma regra do cálculo. Não inclui as classificações de serviço sem vínculo."
     )
     @ApiResponses(value = {

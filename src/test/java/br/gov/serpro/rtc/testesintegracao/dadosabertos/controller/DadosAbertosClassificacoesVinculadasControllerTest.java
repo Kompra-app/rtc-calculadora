@@ -46,6 +46,18 @@ class DadosAbertosClassificacoesVinculadasControllerTest {
             .andExpect(jsonPath("$", not(hasItem("000001"))));
     }
 
+    // The Selective Tax reuses the cClassTrib codes with another meaning; beer has IS
+    // classifications linked to its NCM and no specific CBS/IBS treatment.
+    @Test
+    void teste_controller_listarVinculadasPorNcmSoTrazCbsEIbs() throws Exception {
+        mockMvc.perform(get(ENDPOINT)
+                .param("ncm", "22030000")
+                .param("data", "2027-01-01")
+                .contentType(MediaType.APPLICATION_JSON))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.length()").value(0));
+    }
+
     // The education link is stored by the prefix 122011, which the exact match of
     // /classificacoes-tributarias/nbs misses; the calculation accepts 122011200 for 200028.
     @Test
