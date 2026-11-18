@@ -1,0 +1,98 @@
+# Weekly check of the Receita Federal's repository (calculadora-rtc-regime-regular). The tax
+# tables change almost every month through Flyway scripts, so a fork that stops following the
+# upstream computes with stale rules. When the upstream main has commits ours lacks, this job
+# merges them into sync/upstream, runs the suite against the regenerated database and opens (or
+# updates) a pull request with the result. A pull request opened with GITHUB_TOKEN does not start
+# the CI workflow, which is why the suite runs here.
+name: Upstream sync
+
+on:
+  schedule:
+    - cron: '0 11 * * 1'  # Mondays, 08:00 in Brasília
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: upstream-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    env:
+      UPSTREAM: https://github.com/ReceitaFederal/calculadora-rtc-regime-regular.git
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Fetch upstream and compare
+        id: compare
+        run: |
+          git remote add upstream "$UPSTREAM"
+          git fetch --quiet upstream main
+          behind=$(git rev-list --count HEAD..upstream/main)
+          echo "behind=$behind" >> "$GITHUB_OUTPUT"
+          echo "upstream=$(git rev-parse --short upstream/main)" >> "$GITHUB_OUTPUT"
+          echo "Upstream main has $behind commit(s) we lack"
+
+      - name: Merge upstream into sync/upstream
+        if: steps.compare.outputs.behind != '0'
+        id: merge
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B sync/upstream
+          if git merge --no-edit upstream/main; then
+            echo "conflict=false" >> "$GITHUB_OUTPUT"
+          else
+            git merge --abort
+            echo "conflict=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-java@v4
+        if: steps.compare.outputs.behind != '0' && steps.merge.outputs.conflict == 'false'
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Regenerate the database and run the suite
+        if: steps.compare.outputs.behind != '0' && steps.merge.outputs.conflict == 'false'
+        id: suite
+        continue-on-error: true
+        run: |
+          mkdir -p ./calculadora/db
+          mvn --batch-mode --quiet flyway:migrate -Dflyway.configFiles=./flyway/flyway-pro.conf
+          mvn --batch-mode test
+
+      - name: Push and open or update the pull request
+        if: steps.compare.outputs.behind != '0'
+        run: |
+          if [ "${{ steps.merge.outputs.conflict }}" = "true" ]; then
+            result="❌ O merge com o upstream teve conflito; resolver à mão a partir de \`upstream/main\` (${{ steps.compare.outputs.upstream }})."
+          elif [ "${{ steps.suite.outcome }}" = "success" ]; then
+            result="✅ Banco regenerado pelo Flyway e suíte verde."
+            git push --force origin sync/upstream
+          else
+            result="❌ A suíte falhou depois do merge; ver o log desta execução antes de mergear."
+            git push --force origin sync/upstream
+          fi
+          body=$(printf '%s\n\n%s commit(s) novos da Receita até `%s`.\n\nExecução: %s/%s/actions/runs/%s\n' \
+            "$result" "${{ steps.compare.outputs.behind }}" "${{ steps.compare.outputs.upstream }}" \
+            "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID")
+          if [ "${{ steps.merge.outputs.conflict }}" = "true" ]; then
+            echo "$body" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          existing=$(gh pr list --head sync/upstream --base main --state open --json number --jq '.[0].number')
+          if [ -n "$existing" ]; then
+            gh pr comment "$existing" --body "$body"
+          else
+            gh pr create --head sync/upstream --base main --title "chore: sync with the Receita Federal upstream (${{ steps.compare.outputs.upstream }})" --body "$body"
+          fi

@@ -78,6 +78,7 @@ import br.gov.serpro.rtc.domain.service.UfService;
 import br.gov.serpro.rtc.domain.service.exception.ClassificacaoTributariaNaoEncontradaException;
 import br.gov.serpro.rtc.domain.service.exception.ErroGenericoValidacaoException;
 import br.gov.serpro.rtc.domain.service.exception.NbsNaoEncontradaException;
+import br.gov.serpro.rtc.domain.repository.NcmAplicavelRepository;
 import br.gov.serpro.rtc.domain.service.exception.NbsNaoVinculadaException;
 import br.gov.serpro.rtc.domain.service.exception.NcmNaoEncontradaException;
 import br.gov.serpro.rtc.domain.service.exception.NcmNaoVinculadaException;
@@ -100,6 +101,7 @@ public class DadosAbertosService {
     private final ClassificacaoTributariaService classificacaoTributariaService;
     private final ClassificacaoTributariaRepository classificacaoTributariaRepository;
     private final NbsAplicavelRepository nbsAplicavelRepository;
+    private final NcmAplicavelRepository ncmAplicavelRepository;
     private final NcmRepository ncmRepository;
     private final NbsRepository nbsRepository;
     private final RedutorCompraGovernamentalRepository redutorCompraGovernamentalRepository;
@@ -740,6 +742,45 @@ public class DadosAbertosService {
         List<String> resultado = new ArrayList<>();
         resultado.addAll(vinculados);
         resultado.addAll(semVinculo);
+        return resultado;
+    }
+
+    /**
+     * Códigos cClassTrib cujo anexo vincula o NCM na data: os tratamentos
+     * específicos (redução, alíquota zero, diferimento) aos quais o produto
+     * pode ser enquadrado. Diferente da consulta por NBS, não inclui as
+     * classificações sem anexo, que aceitam qualquer NCM (como a 000001).
+     */
+    public List<String> listarClassificacaoVinculadaPorNcm(String ncm, LocalDate data) {
+        if (!ncmRepository.existeNcm(ncm, data)) {
+            throw new NcmNaoEncontradaException(ncm, data);
+        }
+        List<String> resultado = new ArrayList<>();
+        for (Object[] linha : ncmAplicavelRepository.listarClassificacoesCobrindoNcm(ncm, data)) {
+            Long idClassificacao = ((Number) linha[0]).longValue();
+            if (ncmAplicavelService.aceitaNoAnexo(ncm, idClassificacao, data)) {
+                resultado.add(String.valueOf(linha[1]));
+            }
+        }
+        return resultado;
+    }
+
+    /**
+     * Códigos cClassTrib cujo anexo vincula a NBS na data, por prefixo e com
+     * as exceções aplicadas pela regra do cálculo: os tratamentos específicos
+     * do serviço. Não inclui as classificações de serviço sem vínculo.
+     */
+    public List<String> listarClassificacaoVinculadaPorNbs(String nbs, LocalDate data) {
+        if (!nbsRepository.existeNbs(nbs, data)) {
+            throw new NbsNaoEncontradaException(nbs, data);
+        }
+        List<String> resultado = new ArrayList<>();
+        for (Object[] linha : nbsAplicavelRepository.listarClassificacoesCobrindoNbs(nbs, data)) {
+            Long idClassificacao = ((Number) linha[0]).longValue();
+            if (nbsAplicavelService.aceitaNoAnexo(nbs, idClassificacao, data)) {
+                resultado.add(String.valueOf(linha[1]));
+            }
+        }
         return resultado;
     }
 
