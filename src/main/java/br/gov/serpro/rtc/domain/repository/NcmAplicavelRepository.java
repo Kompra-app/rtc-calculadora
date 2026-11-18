@@ -4,9 +4,11 @@
 package br.gov.serpro.rtc.domain.repository;
 
 import java.time.LocalDate;
+import java.util.List;
 
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.NativeQuery;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -92,4 +94,25 @@ public interface NcmAplicavelRepository extends JpaRepository<NcmAplicavel, Long
     boolean tem(
             @Param("idClassificacaoTributaria") Long idClassificacaoTributaria,
             @Param("data") LocalDate data);
+
+    /*
+     * Classificações tributárias com vínculo vigente cobrindo o NCM (o código
+     * do anexo é prefixo do NCM informado), na data. É o predicado A da
+     * tabela-verdade de NcmAplicavelService; as exceções são aplicadas lá,
+     * pelas mesmas consultas que o cálculo usa. Cada linha traz o id e o
+     * código da classificação.
+     */
+    @NativeQuery(value = """
+        SELECT DISTINCT ct.CLTR_ID, ct.CLTR_CD
+          FROM NCM_APLICAVEL n
+          JOIN CLASSIFICACAO_TRIBUTARIA ct ON ct.CLTR_ID = n.NCMA_CLTR_ID
+         WHERE n.NCMA_NCM_CD = SUBSTR(:ncm, 1, LENGTH(n.NCMA_NCM_CD))
+           AND :data BETWEEN n.NCMA_INICIO_VIGENCIA AND COALESCE(n.NCMA_FIM_VIGENCIA, :data)
+           AND :data BETWEEN ct.CLTR_INICIO_VIGENCIA AND COALESCE(ct.CLTR_FIM_VIGENCIA, :data)
+         ORDER BY ct.CLTR_CD
+    """)
+    List<Object[]> listarClassificacoesCobrindoNcm(
+            @Param("ncm") String ncm,
+            @Param("data") LocalDate data);
+
 }

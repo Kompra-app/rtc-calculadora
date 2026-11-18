@@ -64,6 +64,19 @@ public class NcmAplicavelService {
                 repository.tem(idClassificacaoTributaria, data));
     }
 
+    /**
+     * Indica se o anexo da classificação aceita o NCM completo, pela mesma
+     * regra de {@link #criticar}: aceitar quando A e não (E e !S). Usado para
+     * listar as classificações vinculadas a um NCM sem divergir do cálculo.
+     */
+    public boolean aceitaNoAnexo(String ncm, Long idClassificacaoTributaria, LocalDate data) {
+        if (!repository.temNcmAplicavel(ncm, idClassificacaoTributaria, data)) {
+            return false;
+        }
+        return !(repository.temExcecaoNcmAplicavel(ncm, idClassificacaoTributaria, data)
+                && !repository.temNcmAplicavelSemExcecao(ncm, idClassificacaoTributaria, data));
+    }
+
     /*
      * Tabela-verdade da crítica contra o anexo, para NCM completo e
      * classificação com anexo vigente, considerando os predicados

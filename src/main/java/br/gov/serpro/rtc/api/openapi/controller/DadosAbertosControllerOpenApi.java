@@ -1529,6 +1529,32 @@ public interface DadosAbertosControllerOpenApi {
         String nbs,
         @Parameter(description = "Data no padrão ISO 8601 (yyyy-MM-dd)", example = "2026-01-01", required = true) 
         LocalDate data);
+
+    @Operation(
+        summary = "Classificações Tributárias vinculadas por NCM",
+        description = "Obtém os códigos cClassTrib cujo anexo vincula o NCM em uma determinada data, aplicando as exceções pela mesma regra do cálculo. Não inclui as classificações sem anexo, que aceitam qualquer NCM."
+    )
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "200", description = "Consulta realizada com sucesso", content = {
+            @Content(
+                mediaType = APPLICATION_JSON_VALUE,
+                schema = @Schema(implementation = String.class),
+                examples = @ExampleObject(name = "cClassTrib por NCM Example", value = """
+                    ["200003", "200038", "515001"]
+                    """)
+            )
+        }),
+        @ApiResponse(responseCode = "400", description = "Requisição com problema",
+            content = @Content(mediaType = APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(implementation = ProblemDetail.class))),
+        @ApiResponse(responseCode = "404", description = "NCM não encontrado na data especificada",
+            content = @Content(mediaType = APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(implementation = ProblemDetail.class)))
+    })
+    ResponseEntity<List<String>> listarClassificacoesTributariasVinculadasPorNcm(
+        @Parameter(description = "Código NCM sem formatação", example = "10063021", required = true)
+        @Pattern(regexp = "^\\d{8}$", message = "O código NCM deve conter exatamente 8 dígitos")
+        String ncm,
+        @Parameter(description = "Data no padrão ISO 8601 (yyyy-MM-dd)", example = "2027-01-01", required = true)
+        LocalDate data);
         
     @Operation(
         summary = "Alíquota Padrão ou de Referência para IBS Estadual",
