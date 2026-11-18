@@ -1,0 +1,11 @@
+# Database the image ships, taken as-is from the Receita Federal's offline package
+# (calculadora-jar.zip). The GitHub repository stops at Flyway V0059; the package carries
+# the newer tables. Updated by .github/workflows/official-database.yml; the Dockerfile
+# refuses a database whose checksum differs from DB_SHA256.
+DB_VERSION=0066
+PACKAGE_APP_VERSION=1.6.2
+PACKAGE_URL=https://obs-13820-calcpr-apr.obsv3.br-df-1.hcs.serpro.gov.br/calculadora-jar.zip
+PACKAGE_ETAG="36ec2c95c9fa86103fc9402070157db1-6"
+PACKAGE_LAST_MODIFIED="Wed, 28 Oct 2026 22:41:28 GMT"
+PACKAGE_SHA256=2f5e797698db0428f4b11bf30212265023cf8995e73a08ff1f680b101862b01c
+DB_SHA256=6f2f6697604f22a4eeb2f99f0112cab3ae637aba900cc35304f818f1e8e25e9d

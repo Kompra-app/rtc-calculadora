@@ -1,0 +1,182 @@
+# Weekly check of the Receita Federal's offline package (calculadora-jar.zip), whose database is
+# the one the image ships (official-db/). The GitHub repository lags the package by several
+# Flyway versions, so this is how the tax tables stay current. When the package changes (new
+# ETag), this job downloads it, boots our build against the new database, smoke-tests the routes
+# we added, and opens (or updates) a pull request with the database, the new VERSION and a
+# summary of what changed: row counts per table and the files of the package's own source code
+# that differ from ours, since a newer database may need code the package carries.
+name: Official database
+
+on:
+  schedule:
+    - cron: '30 11 * * 1'  # Mondays, 08:30 in Brasília, after the upstream sync
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: official-database
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      BRANCH: chore/official-database
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Compare the package with the recorded one
+        id: compare
+        run: |
+          . official-db/VERSION
+          etag=$(curl --silent --fail --head --max-time 60 "$PACKAGE_URL" | tr -d '\r' | awk 'tolower($1)=="etag:" {print $2}')
+          if [ -z "$etag" ]; then
+            echo "::error::Could not read the package ETag from $PACKAGE_URL"
+            exit 1
+          fi
+          echo "etag=$etag" >> "$GITHUB_OUTPUT"
+          if [ "$etag" = "\"$PACKAGE_ETAG\"" ] || [ "$etag" = "$PACKAGE_ETAG" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Package unchanged ($etag)"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Package changed: $PACKAGE_ETAG -> $etag"
+          fi
+
+      - name: Download and inspect the package
+        if: steps.compare.outputs.changed == 'true'
+        id: package
+        run: |
+          . official-db/VERSION
+          work="$RUNNER_TEMP/package"
+          mkdir -p "$work"
+          curl --silent --fail --max-time 600 --output "$work/calculadora-jar.zip" "$PACKAGE_URL"
+          last_modified=$(curl --silent --fail --head --max-time 60 "$PACKAGE_URL" | tr -d '\r' | awk -F': ' 'tolower($1)=="last-modified" {print $2}')
+          unzip -q "$work/calculadora-jar.zip" -d "$work/x"
+          db="$work/x/calculadora/db/calculadora-pro.db"
+          test -f "$db"
+          db_version=$(sqlite3 "$db" "SELECT MAX(version) FROM flyway_schema_history" | tr -cd '0-9')
+          app_version=$(unzip -p "$work/x/api-regime-geral.jar" META-INF/MANIFEST.MF | tr -d '\r' | awk -F': ' '$1=="Implementation-Version" {print $2}' | tr -cd 'A-Za-z0-9.-')
+          {
+            echo "work=$work"
+            echo "db=$db"
+            echo "db_version=$db_version"
+            echo "app_version=$app_version"
+            echo "package_sha=$(sha256sum "$work/calculadora-jar.zip" | cut -d' ' -f1)"
+            echo "db_sha=$(sha256sum "$db" | cut -d' ' -f1)"
+            echo "last_modified=$last_modified"
+          } >> "$GITHUB_OUTPUT"
+
+          # Row counts per table, recorded database against the new one.
+          {
+            echo "| Tabela | Atual | Nova |"
+            echo "|---|---:|---:|"
+            for table in $(sqlite3 "$db" "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'flyway%' ORDER BY name"); do
+              before=$(sqlite3 official-db/calculadora-pro.db "SELECT COUNT(*) FROM $table" 2>/dev/null || echo "—")
+              after=$(sqlite3 "$db" "SELECT COUNT(*) FROM $table")
+              [ "$before" != "$after" ] && echo "| $table | $before | $after |"
+            done
+          } > "$work/counts.md"
+          sqlite3 "$db" "SELECT '- V' || version || ': ' || description FROM flyway_schema_history WHERE CAST(version AS INTEGER) > CAST('$DB_VERSION' AS INTEGER) ORDER BY installed_rank" > "$work/migrations.md"
+
+          # Files of the package's own source that differ from ours (main code only).
+          if unzip -q "$work/x/codigo-fonte-backend.zip" -d "$work/src" 2>/dev/null; then
+            diff -rq src/main "$work/src/src/main" | grep -v '^Only in src/main' | sed "s#$work/src/##" > "$work/source.md" || true
+          else
+            echo "(o pacote não trouxe codigo-fonte-backend.zip)" > "$work/source.md"
+          fi
+
+      - uses: actions/setup-java@v4
+        if: steps.compare.outputs.changed == 'true'
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Boot our build against the new database
+        if: steps.compare.outputs.changed == 'true'
+        id: smoke
+        continue-on-error: true
+        run: |
+          mvn --batch-mode --quiet package -DskipTests
+          run="$RUNNER_TEMP/run"
+          mkdir -p "$run/calculadora/db"
+          cp "${{ steps.package.outputs.db }}" "$run/calculadora/db/calculadora-pro.db"
+          (cd "$run" && java -Dspring.profiles.active=offline -jar "$GITHUB_WORKSPACE/target/api-regime-geral.jar" > "$run/app.log" 2>&1 &)
+          for attempt in $(seq 1 90); do
+            curl --silent --fail http://localhost:9101/health > /dev/null && break
+            sleep 2
+          done
+          base=http://localhost:8080/api/calculadora/dados-abertos
+          curl --silent --fail "$base/versao" | grep -q "V${{ steps.package.outputs.db_version }}"
+          curl --silent --fail "$base/classificacoes-tributarias/ncm/vinculadas?ncm=10063021&data=2027-01-01" | grep -q '"200003"'
+          curl --silent --fail "$base/classificacoes-tributarias/nbs/vinculadas?nbs=122011200&data=2027-01-01" | grep -q '"200028"'
+          curl --silent --fail "$base/classificacoes-tributarias/cbs-ibs/class-trib/200003?data=2027-01-01" > /dev/null
+          if grep -qE 'ERROR|Exception' "$run/app.log"; then
+            grep -E 'ERROR|Exception' "$run/app.log" | head -20
+            exit 1
+          fi
+
+      - name: Open or update the pull request
+        if: steps.compare.outputs.changed == 'true'
+        env:
+          ETAG: ${{ steps.compare.outputs.etag }}
+          LAST_MODIFIED: ${{ steps.package.outputs.last_modified }}
+        run: |
+          work="${{ steps.package.outputs.work }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$BRANCH"
+          cp "${{ steps.package.outputs.db }}" official-db/calculadora-pro.db
+          etag=$(printf '%s' "$ETAG" | tr -d '"' | tr -cd 'A-Za-z0-9-')
+          last_modified=$(printf '%s' "$LAST_MODIFIED" | tr -cd 'A-Za-z0-9 ,:')
+          sed -i \
+            -e "s|^DB_VERSION=.*|DB_VERSION=${{ steps.package.outputs.db_version }}|" \
+            -e "s|^PACKAGE_APP_VERSION=.*|PACKAGE_APP_VERSION=${{ steps.package.outputs.app_version }}|" \
+            -e "s|^PACKAGE_ETAG=.*|PACKAGE_ETAG=\"$etag\"|" \
+            -e "s|^PACKAGE_LAST_MODIFIED=.*|PACKAGE_LAST_MODIFIED=\"$last_modified\"|" \
+            -e "s|^PACKAGE_SHA256=.*|PACKAGE_SHA256=${{ steps.package.outputs.package_sha }}|" \
+            -e "s|^DB_SHA256=.*|DB_SHA256=${{ steps.package.outputs.db_sha }}|" \
+            official-db/VERSION
+          git add official-db
+          git commit --quiet -m "chore: official database V${{ steps.package.outputs.db_version }} (package ${{ steps.package.outputs.app_version }})"
+          git push --force origin "$BRANCH"
+
+          if [ "${{ steps.smoke.outcome }}" = "success" ]; then
+            result="✅ Nosso build subiu com a base nova e as rotas de dados abertos (versão, NCM e NBS vinculadas, detalhe de classificação) responderam."
+          else
+            result="❌ Nosso build não passou no smoke com a base nova; ver o log desta execução. Pode faltar código que o pacote traz (lista abaixo)."
+          fi
+          {
+            echo "$result"
+            echo
+            echo "Pacote ${{ steps.package.outputs.app_version }}, base V${{ steps.package.outputs.db_version }}, publicado em $last_modified."
+            echo
+            echo "### Migrações novas"
+            cat "$work/migrations.md"
+            echo
+            echo "### Tabelas com contagem diferente"
+            cat "$work/counts.md"
+            echo
+            echo "### Código do pacote diferente do nosso (src/main)"
+            echo '```'
+            cat "$work/source.md"
+            echo '```'
+            echo
+            echo "Execução: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          } > "$work/body.md"
+
+          existing=$(gh pr list --head "$BRANCH" --base main --state open --json number --jq '.[0].number')
+          if [ -n "$existing" ]; then
+            gh pr comment "$existing" --body-file "$work/body.md"
+          else
+            gh pr create --head "$BRANCH" --base main \
+              --title "chore: official database V${{ steps.package.outputs.db_version }} (package ${{ steps.package.outputs.app_version }})" \
+              --body-file "$work/body.md"
+          fi

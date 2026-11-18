@@ -1,8 +1,10 @@
 # Calculadora RTC (regime regular) as a private service.
 #
-# The SQLite database is built here, from the Flyway scripts of the same commit, so the image
-# always carries the tax tables of the code it runs; the application opens it read-only. Tests
-# run in CI (they need the same database), not in this build.
+# The SQLite database is the one the Receita Federal ships in its offline package
+# (official-db/, see VERSION there): the Flyway scripts on GitHub stop at V0059, while the
+# package carries newer tax tables. The build refuses a database whose checksum differs from
+# the one recorded in VERSION. The application opens it read-only. Tests run in CI against the
+# database Flyway generates, not in this build.
 
 FROM eclipse-temurin:21-jdk AS builder
 
@@ -12,9 +14,9 @@ COPY .mvn .mvn
 COPY mvnw pom.xml ./
 RUN ./mvnw --batch-mode --quiet dependency:go-offline
 
-COPY flyway flyway
-RUN mkdir -p calculadora/db \
-    && ./mvnw --batch-mode --quiet flyway:migrate -Dflyway.configFiles=./flyway/flyway-pro.conf
+COPY official-db official-db
+RUN . official-db/VERSION \
+    && echo "${DB_SHA256}  official-db/calculadora-pro.db" | sha256sum --check --strict
 
 COPY src src
 RUN ./mvnw --batch-mode --quiet package -DskipTests
@@ -26,7 +28,7 @@ RUN groupadd --system calculadora && useradd --system --gid calculadora --home /
 WORKDIR /app
 
 COPY --from=builder --chown=root:calculadora /build/target/api-regime-geral.jar app.jar
-COPY --from=builder --chown=root:calculadora /build/calculadora/db/calculadora-pro.db calculadora/db/calculadora-pro.db
+COPY --from=builder --chown=root:calculadora /build/official-db/calculadora-pro.db calculadora/db/calculadora-pro.db
 RUN chmod 0444 calculadora/db/calculadora-pro.db
 
 USER calculadora
