@@ -1555,6 +1555,32 @@ public interface DadosAbertosControllerOpenApi {
         String ncm,
         @Parameter(description = "Data no padrão ISO 8601 (yyyy-MM-dd)", example = "2027-01-01", required = true)
         LocalDate data);
+
+    @Operation(
+        summary = "Classificações Tributárias vinculadas por NBS",
+        description = "Obtém os códigos cClassTrib cujo anexo vincula a NBS em uma determinada data, casando o vínculo por prefixo e aplicando as exceções pela mesma regra do cálculo. Não inclui as classificações de serviço sem vínculo."
+    )
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "200", description = "Consulta realizada com sucesso", content = {
+            @Content(
+                mediaType = APPLICATION_JSON_VALUE,
+                schema = @Schema(implementation = String.class),
+                examples = @ExampleObject(name = "cClassTrib por NBS Example", value = """
+                    ["200028"]
+                    """)
+            )
+        }),
+        @ApiResponse(responseCode = "400", description = "Requisição com problema",
+            content = @Content(mediaType = APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(implementation = ProblemDetail.class))),
+        @ApiResponse(responseCode = "404", description = "NBS não encontrada na data especificada",
+            content = @Content(mediaType = APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(implementation = ProblemDetail.class)))
+    })
+    ResponseEntity<List<String>> listarClassificacoesTributariasVinculadasPorNbs(
+        @Parameter(description = "Código NBS sem formatação", example = "122011200", required = true)
+        @Pattern(regexp = "^\\d{9}$", message = "O código NBS deve conter exatamente 9 dígitos")
+        String nbs,
+        @Parameter(description = "Data no padrão ISO 8601 (yyyy-MM-dd)", example = "2027-01-01", required = true)
+        LocalDate data);
         
     @Operation(
         summary = "Alíquota Padrão ou de Referência para IBS Estadual",

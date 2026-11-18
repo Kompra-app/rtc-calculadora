@@ -61,6 +61,19 @@ public class NbsAplicavelService {
                 repository.tem(idClassificacaoTributaria, data));
     }
 
+    /**
+     * Indica se o anexo da classificação aceita a NBS, pela mesma regra de
+     * {@link #criticar}: aceitar quando A e não (E e !S). Usado para listar as
+     * classificações vinculadas a uma NBS sem divergir do cálculo.
+     */
+    public boolean aceitaNoAnexo(String nbs, Long idClassificacaoTributaria, LocalDate data) {
+        if (!repository.temNbsAplicavel(nbs, idClassificacaoTributaria, data)) {
+            return false;
+        }
+        return !(repository.temExcecaoNbsAplicavel(nbs, idClassificacaoTributaria, data)
+                && !repository.temNbsAplicavelSemExcecao(nbs, idClassificacaoTributaria, data));
+    }
+
     /*
      * Tabela-verdade da crítica contra o anexo — ver o comentário equivalente
      * em NcmAplicavelService: com A = temNbsAplicavel, E = temExcecaoNbsAplicavel

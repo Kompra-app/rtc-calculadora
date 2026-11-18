@@ -27,7 +27,7 @@ import org.springframework.test.web.servlet.MockMvc;
 @AutoConfigureMockMvc
 @TestPropertySource(locations = "classpath:application-testes.yml")
 @ActiveProfiles("testes")
-class DadosAbertosClassificacoesVinculadasNcmControllerIT {
+class DadosAbertosClassificacoesVinculadasControllerTest {
 
     private static final String ENDPOINT = "/calculadora/dados-abertos/classificacoes-tributarias/ncm/vinculadas";
 
@@ -44,6 +44,18 @@ class DadosAbertosClassificacoesVinculadasNcmControllerIT {
             .andExpect(jsonPath("$", contains("200003", "200038", "515001")))
             .andExpect(jsonPath("$", not(hasItem("200034"))))
             .andExpect(jsonPath("$", not(hasItem("000001"))));
+    }
+
+    // The education link is stored by the prefix 122011, which the exact match of
+    // /classificacoes-tributarias/nbs misses; the calculation accepts 122011200 for 200028.
+    @Test
+    void teste_controller_listarVinculadasPorNbsCasaOVinculoPorPrefixo() throws Exception {
+        mockMvc.perform(get("/calculadora/dados-abertos/classificacoes-tributarias/nbs/vinculadas")
+                .param("nbs", "122011200")
+                .param("data", "2027-01-01")
+                .contentType(MediaType.APPLICATION_JSON))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$", contains("200028")));
     }
 
     @Test

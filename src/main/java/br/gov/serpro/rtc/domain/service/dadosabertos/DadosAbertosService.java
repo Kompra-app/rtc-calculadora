@@ -765,6 +765,25 @@ public class DadosAbertosService {
         return resultado;
     }
 
+    /**
+     * Códigos cClassTrib cujo anexo vincula a NBS na data, por prefixo e com
+     * as exceções aplicadas pela regra do cálculo: os tratamentos específicos
+     * do serviço. Não inclui as classificações de serviço sem vínculo.
+     */
+    public List<String> listarClassificacaoVinculadaPorNbs(String nbs, LocalDate data) {
+        if (!nbsRepository.existeNbs(nbs, data)) {
+            throw new NbsNaoEncontradaException(nbs, data);
+        }
+        List<String> resultado = new ArrayList<>();
+        for (Object[] linha : nbsAplicavelRepository.listarClassificacoesCobrindoNbs(nbs, data)) {
+            Long idClassificacao = ((Number) linha[0]).longValue();
+            if (nbsAplicavelService.aceitaNoAnexo(nbs, idClassificacao, data)) {
+                resultado.add(String.valueOf(linha[1]));
+            }
+        }
+        return resultado;
+    }
+
     public TipoWarningDadosSimulados getWarningDadosSimuladosPorData(LocalDate data) {
         LocalDate dataLimite = LocalDate.of(2027, 1, 1);
         

@@ -191,6 +191,14 @@ public class DadosAbertosController implements DadosAbertosControllerOpenApi {
     }
 
     @Override
+    @GetMapping("/classificacoes-tributarias/nbs/vinculadas")
+    public ResponseEntity<List<String>> listarClassificacoesTributariasVinculadasPorNbs(
+        @RequestParam String nbs,
+        @RequestParam LocalDate data) {
+        return ResponseEntity.ok(dadosAbertosService.listarClassificacaoVinculadaPorNbs(nbs, data));
+    }
+
+    @Override
     @GetMapping("/classificacoes-tributarias/ncm/vinculadas")
     public ResponseEntity<List<String>> listarClassificacoesTributariasVinculadasPorNcm(
         @RequestParam String ncm,

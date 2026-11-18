@@ -140,4 +140,23 @@ public interface NbsAplicavelRepository extends JpaRepository<NbsAplicavel, Long
     """)
     @Cacheable(cacheNames = "NbsAplicavelRepository.existeVinculoParaClassificacao")
     Integer existeVinculoParaClassificacao(@Param("classificacaoId") Long classificacaoId);
+
+    /*
+     * Classificações tributárias com vínculo vigente cobrindo a NBS por
+     * prefixo, na data (predicado A de NbsAplicavelService). Diferente de
+     * listarCodigosClassificacoesVinculadasPorNbs, que casa o código exato e
+     * por isso perde os vínculos gravados por prefixo (a educação, 200028,
+     * está vinculada a 122011). As exceções são aplicadas no serviço.
+     */
+    @NativeQuery(value = """
+        SELECT DISTINCT ct.CLTR_ID, ct.CLTR_CD
+          FROM NBS_APLICAVEL n
+          JOIN CLASSIFICACAO_TRIBUTARIA ct ON ct.CLTR_ID = n.NBSA_CLTR_ID
+         WHERE n.NBSA_NBS_CD = SUBSTR(:nbs, 1, LENGTH(n.NBSA_NBS_CD))
+           AND :data BETWEEN n.NBSA_INICIO_VIGENCIA AND COALESCE(n.NBSA_FIM_VIGENCIA, :data)
+           AND :data BETWEEN ct.CLTR_INICIO_VIGENCIA AND COALESCE(ct.CLTR_FIM_VIGENCIA, :data)
+         ORDER BY ct.CLTR_CD
+    """)
+    List<Object[]> listarClassificacoesCobrindoNbs(@Param("nbs") String nbs, @Param("data") LocalDate data);
+
 }
